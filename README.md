@@ -2,8 +2,6 @@
 
 A lightweight, always-on-top floating panel for Windows that shows all your git worktrees and their branches at a glance — auto-refreshing in the background.
 
-![Panel Preview](preview.png)
-
 ---
 
 ## Features
