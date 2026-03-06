@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Git Worktree Panel</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:        #0d1117;
+    --bg2:       #161b22;
+    --bg3:       #1c2128;
+    --border:    #30363d;
+    --accent:    #58a6ff;
+    --accent2:   #3fb950;
+    --accent3:   #f78166;
+    --accent4:   #d2a8ff;
+    --text:      #e6edf3;
+    --text2:     #8b949e;
+    --text3:     #6e7681;
+    --warning:   #d29922;
+    --danger:    #f85149;
+    --titlebar:  #010409;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  /* ── TITLEBAR ──────────────────────────────────── */
+  #titlebar {
+    background: var(--titlebar);
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    -webkit-app-region: drag;
+    user-select: none;
+    gap: 6px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #titlebar .win-btns {
+    display: flex;
+    gap: 5px;
+    -webkit-app-region: no-drag;
+  }
+
+  .win-btn {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s;
+  }
+  .win-btn:hover { filter: brightness(1.3); }
+  .win-btn.close  { background: #ff5f57; }
+  .win-btn.min    { background: #febc2e; }
+  .win-btn.pin    { background: #28c840; }
+
+  #titlebar .title {
+    flex: 1;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  #titlebar .actions {
+    display: flex;
+    gap: 4px;
+    -webkit-app-region: no-drag;
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+  }
+  .icon-btn:hover { background: var(--bg3); color: var(--text); }
+
+  /* ── STATUS BAR ─────────────────────────────────── */
+  #statusbar {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .pulse {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  .pulse.stale { background: var(--warning); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  #status-text {
+    color: var(--text3);
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    flex: 1;
+  }
+
+  #refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text3);
+    cursor: pointer;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    transition: all 0.15s;
+  }
+  #refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #refresh-btn.spinning { animation: spin 0.6s linear; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── MAIN CONTENT ───────────────────────────────── */
+  #content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #content::-webkit-scrollbar { width: 4px; }
+  #content::-webkit-scrollbar-track { background: transparent; }
+  #content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── EMPTY STATE ───────────────────────────────── */
+  #empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text3);
+    padding: 20px;
+    text-align: center;
+  }
+
+  #empty-state .icon { font-size: 28px; }
+
+  #empty-state p { font-size: 11px; line-height: 1.5; }
+
+  #add-first-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    transition: opacity 0.15s;
+  }
+  #add-first-btn:hover { opacity: 0.85; }
+
+  /* ── REPO CARD ─────────────────────────────────── */
+  .repo-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .repo-header {
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .repo-header:hover { background: #1f2937; }
+
+  .repo-icon { font-size: 13px; }
+
+  .repo-name {
+    flex: 1;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .repo-count {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text3);
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 1px 5px;
+    border-radius: 10px;
+  }
+
+  .repo-remove {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  .repo-header:hover .repo-remove { opacity: 1; }
+  .repo-remove:hover { color: var(--danger); }
+
+  /* ── WORKTREES LIST ───────────────────────────── */
+  .worktrees-list { padding: 4px 0; }
+
+  .wt-row {
+    display: flex;
+    align-items: center;
+    padding: 4px 10px;
+    gap: 8px;
+    transition: background 0.1s;
+  }
+
+  .wt-row:hover { background: var(--bg3); }
+
+  .wt-indicator {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .wt-indicator.main   { background: var(--accent); }
+  .wt-indicator.branch { background: var(--accent2); }
+  .wt-indicator.detach { background: var(--accent3); }
+  .wt-indicator.locked { background: var(--warning); }
+  .wt-indicator.bare   { background: var(--text3); }
+
+  .wt-info { flex: 1; min-width: 0; }
+
+  .wt-branch {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wt-branch.detach { color: var(--accent3); }
+  .wt-branch.bare   { color: var(--text3); font-style: italic; }
+
+  .wt-path {
+    color: var(--text3);
+    font-size: 9.5px;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+
+  .wt-badges { display: flex; gap: 3px; flex-shrink: 0; }
+
+  .badge {
+    font-size: 8px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .badge.main    { background: #1d3557; color: var(--accent); }
+  .badge.locked  { background: #2d1f00; color: var(--warning); }
+  .badge.prunable{ background: #2d0f0f; color: var(--danger); }
+  .badge.bare    { background: #1a1a2e; color: var(--text3); }
+
+  /* ── ERROR STATE ──────────────────────────────── */
+  .repo-error {
+    padding: 8px 10px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--danger);
+    background: #1a0a0a;
+    border-left: 2px solid var(--danger);
+    margin: 4px 6px;
+    border-radius: 0 3px 3px 0;
+    line-height: 1.4;
+  }
+
+  /* ── ADD REPO PANEL ───────────────────────────── */
+  #add-panel {
+    background: var(--bg2);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    animation: fadeIn 0.15s ease;
+  }
+
+  #add-panel.visible { display: flex; }
+
+  .add-panel-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .input-group { display: flex; flex-direction: column; gap: 3px; }
+
+  .input-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .text-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  .text-input:focus { border-color: var(--accent); }
+  .text-input::placeholder { color: var(--text3); }
+
+  .btn-row { display: flex; gap: 6px; }
+
+  .btn {
+    flex: 1;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .btn.primary:hover { opacity: 0.85; }
+  .btn.cancel  { background: transparent; color: var(--text2); }
+  .btn.cancel:hover  { background: var(--bg3); }
+
+  /* ── SETTINGS PANEL ───────────────────────────── */
+  #settings-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    animation: fadeIn 0.15s ease;
+  }
+
+  #settings-panel.visible { display: flex; }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .setting-label {
+    font-size: 11px;
+    color: var(--text2);
+    flex: 1;
+  }
+
+  .setting-sub {
+    font-size: 9px;
+    color: var(--text3);
+    margin-top: 1px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .num-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    width: 55px;
+    outline: none;
+    text-align: center;
+  }
+
+  .num-input:focus { border-color: var(--accent); }
+
+  .toggle {
+    width: 28px; height: 15px;
+    background: var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    position: relative;
+    border: none;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 11px; height: 11px;
+    background: var(--text3);
+    border-radius: 50%;
+    top: 2px; left: 2px;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { transform: translateX(13px); background: #fff; }
+
+  /* ── DIVIDER ──────────────────────────────────── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 10px;
+  }
+
+  /* ── FOOTER ───────────────────────────────────── */
+  #footer {
+    border-top: 1px solid var(--border);
+    padding: 5px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--titlebar);
+    flex-shrink: 0;
+  }
+
+  #footer-left {
+    display: flex;
+    gap: 6px;
+  }
+
+  .footer-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text3);
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    transition: all 0.15s;
+  }
+
+  .footer-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .footer-btn.active { border-color: var(--accent4); color: var(--accent4); }
+
+  #footer-right {
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text3);
+  }
+</style>
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div id="titlebar">
+  <div class="win-btns">
+    <button class="win-btn close"  title="Hide" onclick="closePanel()"></button>
+    <button class="win-btn min"    title="Minimize" onclick="minPanel()"></button>
+    <button class="win-btn pin"    title="Toggle Always on Top" onclick="togglePin()" id="pin-btn"></button>
+  </div>
+  <div class="title">⎇ Worktree Panel</div>
+  <div class="actions">
+    <button class="icon-btn" title="Settings" onclick="toggleSettings()">⚙</button>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div id="statusbar">
+  <div class="pulse" id="pulse-dot"></div>
+  <div id="status-text">waiting...</div>
+  <button id="refresh-btn" onclick="refreshNow()">↺ refresh</button>
+</div>
+
+<!-- MAIN CONTENT -->
+<div id="content">
+  <div id="empty-state">
+    <div class="icon">🌲</div>
+    <p>No repositories configured yet.<br>Add a git repo root to start monitoring its worktrees.</p>
+    <button id="add-first-btn" onclick="showAddPanel()">+ Add Repository</button>
+  </div>
+
+  <div id="repos-container"></div>
+
+  <!-- ADD REPO PANEL -->
+  <div id="add-panel">
+    <div class="add-panel-title">📁 Add Repository</div>
+    <div class="input-group">
+      <div class="input-label">Repo Name</div>
+      <input class="text-input" id="repo-name-input" placeholder="my-project" />
+    </div>
+    <div class="input-group">
+      <div class="input-label">Path to Repo Root</div>
+      <input class="text-input" id="repo-path-input" placeholder="C:\Users\you\projects\my-project" />
+    </div>
+    <div class="btn-row">
+      <button class="btn cancel" onclick="hideAddPanel()">Cancel</button>
+      <button class="btn primary" onclick="addRepo()">Add</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div id="settings-panel">
+    <div class="add-panel-title">⚙ Settings</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Refresh Interval</div>
+        <div class="setting-sub">seconds between auto-refresh</div>
+      </div>
+      <input class="num-input" id="refresh-interval" type="number" min="1" max="60" value="5" />
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Always on Top</div>
+        <div class="setting-sub">float above other windows</div>
+      </div>
+      <button class="toggle on" id="aot-toggle" onclick="toggleAOT()"></button>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Opacity</div>
+        <div class="setting-sub">window transparency</div>
+      </div>
+      <input class="num-input" id="opacity-input" type="number" min="20" max="100" value="95" />
+    </div>
+    <div class="btn-row">
+      <button class="btn cancel" onclick="hideSettings()">Close</button>
+      <button class="btn primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div id="footer">
+  <div id="footer-left">
+    <button class="footer-btn" id="add-btn" onclick="toggleAddPanel()" title="Add repo">+ repo</button>
+  </div>
+  <div id="footer-right" id="total-count">—</div>
+</div>
+
+<script>
+const { ipcRenderer } = require('electron');
+
+let state = {
+  data: [],
+  config: {},
+  lastUpdate: null,
+  addPanelOpen: false,
+  settingsOpen: false,
+  pinned: true
+};
+
+// ── INIT ─────────────────────────────────────────
+async function init() {
+  state.config = await ipcRenderer.invoke('get-config');
+  applyConfig(state.config);
+  
+  ipcRenderer.on('worktree-data', (_, data) => {
+    state.data = data;
+    state.lastUpdate = Date.now();
+    render();
+  });
+}
+
+function applyConfig(cfg) {
+  document.getElementById('refresh-interval').value = cfg.refreshSeconds || 5;
+  document.getElementById('opacity-input').value = Math.round((cfg.opacity || 0.95) * 100);
+  state.pinned = cfg.alwaysOnTop !== false;
+  const aot = document.getElementById('aot-toggle');
+  aot.classList.toggle('on', state.pinned);
+}
+
+// ── RENDER ────────────────────────────────────────
+function render() {
+  const container = document.getElementById('repos-container');
+  const empty = document.getElementById('empty-state');
+  const footer = document.getElementById('footer-right');
+  const pulse = document.getElementById('pulse-dot');
+  const statusText = document.getElementById('status-text');
+
+  const hasRepos = state.data.length > 0;
+  empty.style.display = hasRepos ? 'none' : 'flex';
+  container.style.display = hasRepos ? 'flex' : 'none';
+  if (hasRepos) container.style.flexDirection = 'column';
+  if (hasRepos) container.style.gap = '6px';
+
+  // Status bar
+  const totalWt = state.data.reduce((a, r) => a + (r.worktrees?.length || 0), 0);
+  const now = new Date();
+  statusText.textContent = `${state.data.length} repo${state.data.length!==1?'s':''} · ${totalWt} trees · ${now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+  pulse.className = 'pulse';
+
+  footer.textContent = `${totalWt} worktree${totalWt!==1?'s':''}`;
+
+  // Render repos
+  container.innerHTML = '';
+  for (const repo of state.data) {
+    container.appendChild(renderRepo(repo));
+  }
+}
+
+function renderRepo(repo) {
+  const card = document.createElement('div');
+  card.className = 'repo-card';
+
+  const wt = repo.worktrees || [];
+  
+  // Header
+  const header = document.createElement('div');
+  header.className = 'repo-header';
+  header.innerHTML = `
+    <span class="repo-icon">📦</span>
+    <span class="repo-name" title="${repo.path}">${repo.name || baseName(repo.path)}</span>
+    <span class="repo-count">${wt.length}</span>
+    <button class="repo-remove" onclick="removeRepo('${escHtml(repo.path)}')" title="Remove">✕</button>
+  `;
+  card.appendChild(header);
+
+  if (repo.error) {
+    const err = document.createElement('div');
+    err.className = 'repo-error';
+    err.textContent = repo.error;
+    card.appendChild(err);
+    return card;
+  }
+
+  // Worktrees
+  const list = document.createElement('div');
+  list.className = 'worktrees-list';
+
+  if (wt.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding: 8px 10px; font-size: 10px; color: var(--text3); font-style: italic;';
+    empty.textContent = 'No worktrees found';
+    list.appendChild(empty);
+  }
+
+  for (let i = 0; i < wt.length; i++) {
+    const tree = wt[i];
+    const row = document.createElement('div');
+    row.className = 'wt-row';
+
+    const isMain = i === 0;
+    const isBare = tree.bare;
+    const isDetach = tree.branch?.startsWith('detach');
+    const isLocked = tree.locked;
+
+    let indClass = isMain ? 'main' : (isBare ? 'bare' : (isDetach ? 'detach' : (isLocked ? 'locked' : 'branch')));
+    let branchClass = isDetach ? 'detach' : (isBare ? 'bare' : '');
+    let branchLabel = isBare ? '(bare)' : (tree.branch || `HEAD:${tree.head}`);
+
+    const badges = [];
+    if (isMain)    badges.push('<span class="badge main">main</span>');
+    if (isLocked)  badges.push('<span class="badge locked">🔒</span>');
+    if (tree.prunable) badges.push('<span class="badge prunable">prune</span>');
+    if (isBare)    badges.push('<span class="badge bare">bare</span>');
+
+    row.innerHTML = `
+      <div class="wt-indicator ${indClass}"></div>
+      <div class="wt-info">
+        <div class="wt-branch ${branchClass}">${escHtml(branchLabel)}</div>
+        <div class="wt-path">${escHtml(shortPath(tree.path))}</div>
+      </div>
+      <div class="wt-badges">${badges.join('')}</div>
+    `;
+
+    if (i < wt.length - 1) {
+      // subtle separator
+    }
+    list.appendChild(row);
+  }
+
+  card.appendChild(list);
+  return card;
+}
+
+// ── HELPERS ───────────────────────────────────────
+function baseName(p) {
+  return p.replace(/\\/g, '/').split('/').filter(Boolean).pop() || p;
+}
+
+function shortPath(p) {
+  if (!p) return '';
+  // shorten home dir
+  const parts = p.replace(/\\/g, '/').split('/');
+  if (parts.length > 4) {
+    return '…/' + parts.slice(-3).join('/');
+  }
+  return p;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── ACTIONS ───────────────────────────────────────
+function closePanel()   { ipcRenderer.invoke('close-window'); }
+function minPanel()     { ipcRenderer.invoke('minimize-window'); }
+
+function togglePin() {
+  state.pinned = !state.pinned;
+  ipcRenderer.invoke('save-config', { alwaysOnTop: state.pinned });
+}
+
+async function refreshNow() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  const data = await ipcRenderer.invoke('refresh-now');
+  state.data = data;
+  state.lastUpdate = Date.now();
+  render();
+  setTimeout(() => btn.classList.remove('spinning'), 600);
+}
+
+function toggleAddPanel() {
+  if (state.addPanelOpen) hideAddPanel(); else showAddPanel();
+}
+
+function showAddPanel() {
+  state.addPanelOpen = true;
+  hideSettings();
+  document.getElementById('add-panel').classList.add('visible');
+  document.getElementById('add-btn').classList.add('active');
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('repo-path-input').focus();
+}
+
+function hideAddPanel() {
+  state.addPanelOpen = false;
+  document.getElementById('add-panel').classList.remove('visible');
+  document.getElementById('add-btn').classList.remove('active');
+  document.getElementById('repo-name-input').value = '';
+  document.getElementById('repo-path-input').value = '';
+  if (!state.data.length) document.getElementById('empty-state').style.display = 'flex';
+}
+
+async function addRepo() {
+  const name = document.getElementById('repo-name-input').value.trim();
+  const path = document.getElementById('repo-path-input').value.trim();
+  if (!path) {
+    document.getElementById('repo-path-input').style.borderColor = 'var(--danger)';
+    setTimeout(() => document.getElementById('repo-path-input').style.borderColor = '', 1500);
+    return;
+  }
+  await ipcRenderer.invoke('add-repo', { name: name || null, path });
+  hideAddPanel();
+}
+
+async function removeRepo(path) {
+  await ipcRenderer.invoke('remove-repo', path);
+}
+
+function toggleSettings() {
+  if (state.settingsOpen) hideSettings(); else showSettings();
+}
+
+function showSettings() {
+  state.settingsOpen = true;
+  hideAddPanel();
+  document.getElementById('settings-panel').classList.add('visible');
+}
+
+function hideSettings() {
+  state.settingsOpen = false;
+  document.getElementById('settings-panel').classList.remove('visible');
+}
+
+function toggleAOT() {
+  const btn = document.getElementById('aot-toggle');
+  btn.classList.toggle('on');
+}
+
+async function saveSettings() {
+  const aot = document.getElementById('aot-toggle').classList.contains('on');
+  const interval = parseInt(document.getElementById('refresh-interval').value) || 5;
+  const opacity = (parseInt(document.getElementById('opacity-input').value) || 95) / 100;
+  
+  await ipcRenderer.invoke('save-config', {
+    alwaysOnTop: aot,
+    refreshSeconds: interval,
+    opacity
+  });
+  
+  hideSettings();
+}
+
+// Enter key on add panel
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && state.addPanelOpen) addRepo();
+  if (e.key === 'Escape') { hideAddPanel(); hideSettings(); }
+});
+
+init();
+</script>
+</body>
+</html>
